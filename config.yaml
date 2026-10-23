@@ -1,0 +1,34 @@
+# Display
+screen_width: 1280
+screen_height: 720
+fps: 60
+
+# Camera / projection
+fov_deg: 90
+camera_height: 1.2
+horizon_frac: 0.42
+
+# Road / vehicle
+road_width: 7.0
+road_length: 1000.0
+speed: 8.5
+wheelbase: 2.6
+max_steer_deg: 12
+steer_tau: 0.16
+steer_return_tau: 0.12
+
+# Experiment
+trial_seconds: 30
+practice_seconds: 20
+trials_per_condition: 3
+practice_trials: 2
+conditions: [full, tangent, control]
+seeds: [101, 202, 303]
+
+# Mask
+mask_radius_frac: 0.07
+mask_color: [110, 110, 110]
+
+# Misc
+data_dir: data
+debug: false

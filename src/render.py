@@ -160,25 +160,49 @@ class Renderer:
         # windshield seal. Its curved front lip, rather than a road overlay,
         # determines the nearest visible road distance.
         top = 1.0 - self.config.hood_height_frac
-        hood = [(0,top+.10),(.23,top+.035),(.56,top),(.85,top+.008),(1,top+.035),(1,1),(0,1)]
-        poly((57,65,67), hood)
-        for i in range(28):
-            t=i/28
-            y=top+.045+t*.10
-            color=(int(66-26*t),int(75-28*t),int(77-29*t))
-            poly(color,[(0,y+.04),(.20,y),(.72,y+.01),(1,y+.055),(1,y+.062),(.72,y+.017),(.20,y+.007),(0,y+.047)])
-        # Windshield rubber, wipers, and the curved dashboard crash pad.
-        poly((12,19,22),[(0,top+.115),(.17,top+.085),(.56,top+.093),(1,top+.15),(1,1),(0,1)])
-        poly((35,43,47),[(0,top+.14),(.18,top+.105),(.56,top+.12),(1,top+.175),(1,1),(0,1)])
-        pygame.draw.lines(layer,(89,98,99),False,[(0,int((top+.115)*h)),(int(.18*w),int((top+.085)*h)),(int(.56*w),int((top+.093)*h)),(w,int((top+.15)*h))],2)
-        for x1,x2,yy in [(.18,.45,top+.09),(.56,.82,top+.11)]:
-            pygame.draw.line(layer,(14,21,24),(int(x1*w),int(yy*h)),(int(x2*w),int((yy+.009)*h)),3)
+        # Smooth crowned bonnet: continuous cross-section, with a soft sky
+        # reflection and a dark falloff toward the windshield. Baked once.
+        hood_edge = []
+        glass_edge = []
+        pad_edge = []
+        for x in range(w):
+            u = x / max(1, w-1)
+            front = (top + .26*(u-.59)**2)*h
+            rear = (top + .108 + .095*(u-.27)**2)*h
+            pad = rear + .027*h
+            hood_edge.append((x, int(front)))
+            glass_edge.append((x, int(rear)))
+            pad_edge.append((x, int(pad)))
+            for y in range(int(front), int(rear)+1):
+                t = (y-front)/max(1,rear-front)
+                reflection = 22*math.exp(-((t-.23)/.26)**2)
+                crown = 9*math.exp(-((u-.57)/.43)**2)
+                shade = 47 + crown + reflection - 19*t
+                layer.set_at((x,y),(int(shade),int(shade+9),int(shade+13),255))
+            pygame.draw.line(layer,(10,17,21),(x,int(rear)),(x,int(rear+.009*h)))
+            for y in range(int(rear+.009*h), int(pad)+1):
+                t = (y-rear)/max(1,pad-rear)
+                shade = int(43-9*t)
+                layer.set_at((x,y),(shade,shade+7,shade+11,255))
+            pygame.draw.line(layer,(32,39,43),(x,int(pad)),(x,h))
+        pygame.draw.aalines(layer,(99,111,115),False,hood_edge)
+        pygame.draw.aalines(layer,(66,78,83),False,glass_edge)
+        pygame.draw.aalines(layer,(51,62,68),False,pad_edge)
+        # Low-profile curved wipers sit at the glass base.
+        for start,end in [(.19,.44),(.57,.82)]:
+            points=[]
+            for i in range(41):
+                u=start+(end-start)*i/40
+                yy=(top+.108+.095*(u-.27)**2-.004)*h
+                points.append((int(u*w),int(yy)))
+            pygame.draw.lines(layer,(17,24,28),False,points,3)
+            pygame.draw.aalines(layer,(52,63,68),False,points)
         dash=top+.17
         for y in range(int(dash*h),h):
             shade=int(34-16*(y-dash*h)/max(1,h-dash*h))
             pygame.draw.line(layer,(shade,shade+5,shade+9),(0,y),(w,y))
         # Instrument binnacle projects toward the driver, below the glass.
-        poly((12,18,23),[(.22,dash+.09),(.25,dash+.015),(.31,dash-.025),(.50,dash-.025),(.57,dash+.03),(.59,dash+.10)])
+        poly((12,18,23),[(.16,dash+.09),(.19,dash+.015),(.25,dash-.025),(.44,dash-.025),(.51,dash+.03),(.53,dash+.10)])
         # Reference framing: only the lower left A-pillar enters the image.
         # Its foot joins the door at the screen edge, not a second strip of
         # forward-facing dashboard with exterior road visible to its left.
@@ -224,7 +248,7 @@ class Renderer:
         w, h = self.config.screen_width, self.config.screen_height
         self.screen.blit(self.cockpit, (0,0))
         # A fixed speedometer supplies no road curvature or lateral-error cue.
-        center = (int(.43*w), int((1-self.config.hood_height_frac+.19)*h))
+        center = (int(.37*w), int((1-self.config.hood_height_frac+.19)*h))
         radius = int(.061*h)
         pygame.draw.circle(self.screen, (6,12,16), center, radius)
         pygame.draw.circle(self.screen, (87,99,101), center, radius, 2)
@@ -239,7 +263,7 @@ class Renderer:
         # Positive model steering moves right on screen; pygame positive rotation
         # is counterclockwise, hence the negative sign. Use actual smoothed steer.
         rotated = pygame.transform.rotozoom(self.wheel, -math.degrees(car.steer)*self.config.steering_wheel_ratio, 1)
-        self.screen.blit(rotated, rotated.get_rect(center=(int(.43*w),int(.865*h))))
+        self.screen.blit(rotated, rotated.get_rect(center=(int(.37*w),int(.865*h))))
 
     def _draw_mask(self, mask) -> None:
         if getattr(mask, "condition", "full") == "full":

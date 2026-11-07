@@ -17,7 +17,7 @@ def main():
     cfg.data_dir = str(ROOT / "data" / "test_flow")
     cfg.trial_seconds = 1.0
     cfg.practice_seconds = 1.0
-    cfg.practice_trials = 0
+    cfg.practice_trials = 2
     cfg.trials_per_condition = 1
     cfg.seeds = [101]
     cfg.conditions = ["full", "tangent", "control"]
@@ -25,6 +25,7 @@ def main():
     exp = Experiment(cfg, "FLOW", debug=False, smoke_test=False)
     # Skip human-in-the-loop screens for this automated flow test.
     exp._start_screen = lambda: True
+    exp._practice_intro = lambda: "skip"  # exercise the skip-practice path
     exp._countdown = lambda n: None
     exp._wait_for_space = lambda: True
     exp._wait_for_quit = lambda: None

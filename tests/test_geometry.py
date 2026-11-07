@@ -9,6 +9,8 @@ from src.config import Config
 from src.road import Road
 from src.vehicle import Vehicle
 from src.tangent import TangentEstimator
+from src.mask import MaskController
+from src.render import Projector
 
 
 def test_tangent_on_inside_edge():
@@ -42,7 +44,26 @@ def test_vehicle_moves_forward():
     assert abs(car.x) < 2.0  # no steering on a curve -> some drift is expected
 
 
+def test_control_mask_matches_tangent():
+    cfg = Config()
+    road = Road(101, cfg.road_width, cfg.road_length)
+    car = Vehicle(cfg)
+    tangent = TangentEstimator(cfg).find(road, car)
+    projector = Projector(cfg)
+    ctrl = MaskController(cfg)
+
+    m_t = ctrl.update("tangent", road, car, tangent, projector)
+    m_c = ctrl.update("control", road, car, tangent, projector)
+
+    assert m_t.center is not None and m_c.center is not None
+    assert m_t.radius == m_c.radius
+    assert m_t.radius > 0
+    assert abs(m_t.center[1] - m_c.center[1]) <= 2  # same longitudinal position
+    assert m_t.center[0] != m_c.center[0]           # opposite edges
+
+
 if __name__ == "__main__":
     test_tangent_on_inside_edge()
     test_vehicle_moves_forward()
+    test_control_mask_matches_tangent()
     print("geometry tests ok")

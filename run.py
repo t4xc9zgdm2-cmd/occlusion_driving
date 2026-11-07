@@ -20,12 +20,15 @@ def main() -> None:
     parser.add_argument("--participant", "-p", default=None, help="Participant ID, e.g. P01")
     parser.add_argument("--debug", action="store_true", help="Show tangent/mask/error overlay")
     parser.add_argument("--smoke-test", action="store_true", help="Headless 3-trial smoke test")
+    parser.add_argument("--skip-practice", action="store_true", help="Skip the practice trials")
     parser.add_argument("--config", default=None, help="Path to config.yaml")
     args = parser.parse_args()
 
     root = Path(__file__).resolve().parent
     config_path = Path(args.config) if args.config else root / "config.yaml"
     config = Config.load(config_path)
+    if args.skip_practice:
+        config.practice_trials = 0
 
     participant = args.participant
     if not participant:

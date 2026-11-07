@@ -30,6 +30,7 @@ class Experiment:
         self.clock = None
         self.renderer = None
         self.logger = None
+        self._practice_skipped = False
 
     def _init_pygame(self) -> None:
         pygame.init()
@@ -54,10 +55,17 @@ class Experiment:
             trials = [(c, self.config.seeds[0]) for c in self.config.conditions]
             duration = 5.0
 
+        practice_choice = "skip"
+        if not self.smoke_test and self.config.practice_trials > 0:
+            practice_choice = self._practice_intro()
+            if practice_choice == "quit":
+                pygame.quit()
+                return
+
         self.logger = SessionLogger(self.config, self.participant)
         self.logger.set_trial_order(trials)
 
-        if not self.smoke_test:
+        if not self.smoke_test and practice_choice == "start":
             for i in range(self.config.practice_trials):
                 ok = self._run_trial(
                     condition="full",
@@ -70,6 +78,8 @@ class Experiment:
                 if not ok:
                     self._finish(aborted=True)
                     return
+                if self._practice_skipped:
+                    break
 
         for i, (condition, seed) in enumerate(trials):
             ok = self._run_trial(condition, seed, duration, False, i + 1, len(trials))
@@ -105,7 +115,7 @@ class Experiment:
             "Use LEFT / RIGHT arrow keys (or A / D) to steer.",
             "Speed is fixed. Some parts of the road may be masked.",
             "",
-            "Press SPACE to start practice.",
+            "Press SPACE to continue.",
             "ESC to quit.",
         ]
         self.renderer.draw_message(lines, big_first=True)
@@ -118,6 +128,49 @@ class Experiment:
                         return False
                     if event.key == pygame.K_SPACE:
                         return True
+            self.clock.tick(30)
+
+    def _practice_intro(self) -> str:
+        """Ask whether to run or skip practice.
+
+        Returns "start", "skip", or "quit". The explicit skip option matters
+        for team members who rerun the program many times during piloting.
+        """
+        self.renderer.draw_message([
+            "PRACTICE",
+            f"{self.config.practice_trials} trials x {self.config.practice_seconds:.0f} s",
+            "The road is fully visible during practice.",
+            "",
+            "SPACE  start practice",
+            "S      skip practice",
+            "ESC    quit",
+        ], big_first=True)
+
+        # A clickable skip control, in addition to the S key. This is useful
+        # for team members who are rerunning the session many times.
+        w = self.config.screen_width
+        h = self.config.screen_height
+        skip_button = pygame.Rect(w // 2 - 110, h - 120, 220, 44)
+        pygame.draw.rect(self.screen, (62, 62, 72), skip_button, border_radius=8)
+        pygame.draw.rect(self.screen, (120, 120, 135), skip_button, 2, border_radius=8)
+        label = self.renderer.font.render("SKIP PRACTICE  (S)", True, (240, 240, 240))
+        self.screen.blit(label, label.get_rect(center=skip_button.center))
+        pygame.display.flip()
+
+        while True:
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    return "quit"
+                if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+                    if skip_button.collidepoint(event.pos):
+                        return "skip"
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return "quit"
+                    if event.key == pygame.K_SPACE:
+                        return "start"
+                    if event.key == pygame.K_s:
+                        return "skip"
             self.clock.tick(30)
 
     def _run_trial(
@@ -146,8 +199,12 @@ class Experiment:
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     return False
-                if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                    return False
+                if event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_ESCAPE:
+                        return False
+                    if practice and event.key == pygame.K_s:
+                        self._practice_skipped = True
+                        return True
 
             axis = read_steer_axis()
             car.update(axis * self.config.max_steer_rad, road, dt)

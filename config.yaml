@@ -4,18 +4,24 @@ screen_height: 720
 fps: 60
 
 # Camera / projection
-fov_deg: 90
+fov_deg: 105
 camera_height: 1.2
 horizon_frac: 0.42
+
+# First-person cockpit (hood + dashboard occlude the near-field road)
+hood_height_frac: 0.24
+hood_top_width_frac: 0.40
+hood_bottom_width_frac: 0.60
+dashboard_height_frac: 0.13
 
 # Road / vehicle
 road_width: 7.0
 road_length: 1000.0
-speed: 8.5
+speed: 11.0
 wheelbase: 2.6
-max_steer_deg: 12
-steer_tau: 0.16
-steer_return_tau: 0.12
+max_steer_deg: 10
+steer_tau: 0.18
+steer_return_tau: 0.14
 
 # Experiment
 trial_seconds: 30
@@ -26,8 +32,14 @@ conditions: [full, tangent, control]
 seeds: [101, 202, 303]
 
 # Mask
-mask_radius_frac: 0.07
-mask_color: [110, 110, 110]
+# black cuts all visual information; mosaic/blur are weaker fallback styles.
+# Radius is capped at 0.13 and scaled to the projected half-road width at the
+# tangent distance so a far tangent does not turn into a full-road occlusion.
+mask_radius_frac: 0.13
+mask_min_frac: 0.06
+mask_cover_frac: 1.10
+mask_style: black
+mask_color: [110, 110, 110]  # only used when mask_style: solid
 
 # Misc
 data_dir: data

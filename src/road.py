@@ -21,11 +21,14 @@ class Road:
         self.length = length
 
         # Two sine components make a road that is not a single perfect arc.
-        self.a1 = rng.uniform(6.0, 10.0)
-        self.l1 = rng.uniform(100.0, 150.0)
+        # Keep the minimum radius roughly >= 25 m: at 11 m/s (about 40 km/h)
+        # the old 45-75 m second component produced 14 m hairpins that were not
+        # drivable with the keyboard controller.
+        self.a1 = rng.uniform(5.0, 8.0)
+        self.l1 = rng.uniform(110.0, 160.0)
         self.p1 = rng.uniform(0.0, 2.0 * math.pi)
-        self.a2 = rng.uniform(2.0, 4.0)
-        self.l2 = rng.uniform(45.0, 75.0)
+        self.a2 = rng.uniform(0.8, 1.5)
+        self.l2 = rng.uniform(75.0, 105.0)
         self.p2 = rng.uniform(0.0, 2.0 * math.pi)
 
     def center_x(self, s: float) -> float:

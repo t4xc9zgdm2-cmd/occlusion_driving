@@ -14,17 +14,20 @@ class Config:
     fps: int = 60
 
     # Camera / projection
-    fov_deg: float = 105.0
+    fov_deg: float = 85.0
     camera_height: float = 1.2
     horizon_frac: float = 0.42
+    camera_pitch_deg: float = 3.0  # positive: look slightly upward
+    camera_lateral_offset: float = -0.35  # metres from vehicle centre; left seat
 
     # First-person cockpit. These occlude the near-field road the way a real
     # dashboard/hood does, so the driver cannot use the area just ahead of the
     # bumper as a lane-keeping anchor.
-    hood_height_frac: float = 0.24      # hood top above the bottom edge
+    hood_height_frac: float = 0.40      # hood top above the bottom edge
     hood_top_width_frac: float = 0.40
     hood_bottom_width_frac: float = 0.60
     dashboard_height_frac: float = 0.13
+    steering_wheel_ratio: float = 14.0  # visual wheel rotation / front-wheel angle
 
     # Road / vehicle
     road_width: float = 7.0

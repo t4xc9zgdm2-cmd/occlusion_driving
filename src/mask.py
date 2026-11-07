@@ -61,7 +61,8 @@ class MaskController:
         # far away, because the projected road is narrow. Scale the radius to
         # the projected half-road width at the tangent distance, then clamp it.
         z = max(tangent.z, 1e-3)
-        half_road_px = projector.f * (road.width / 2.0) / z
+        depth = max(0.5, z * projector.cos_pitch - projector.camera_height * projector.sin_pitch)
+        half_road_px = projector.f * (road.width / 2.0) / depth
         radius = int(round(half_road_px * self.config.mask_cover_frac))
         min_radius = int(round(self.config.screen_height * self.config.mask_min_frac))
         max_radius = int(round(self.config.screen_height * self.config.mask_radius_frac))

@@ -15,16 +15,22 @@ class Projector:
         self.config = config
         self.f = (config.screen_width / 2.0) / math.tan(math.radians(config.fov_deg) / 2.0)
         self.cx = config.screen_width / 2.0
-        self.horizon = config.screen_height * config.horizon_frac
+        self.cy = config.screen_height * config.horizon_frac
+        pitch = math.radians(config.camera_pitch_deg)
+        self.sin_pitch, self.cos_pitch = math.sin(pitch), math.cos(pitch)
+        self.horizon = self.cy + self.f * math.tan(pitch)
         self.camera_height = config.camera_height
 
     def project(self, road: Road, car: Vehicle, s: float, x: float) -> Optional[Tuple[int, int]]:
         z = s - car.s
         if z <= 0.5:
             return None
-        lat = road.lateral_offset(car.s, car.x, car.heading, s, x)
-        sx = self.cx + self.f * lat / z
-        sy = self.horizon + self.f * self.camera_height / z
+        lat = road.lateral_offset(car.s, car.x, car.heading, s, x) - self.config.camera_lateral_offset
+        depth = z * self.cos_pitch - self.camera_height * self.sin_pitch
+        if depth <= 0.5:
+            return None
+        sx = self.cx + self.f * lat / depth
+        sy = self.cy + self.f * (self.camera_height * self.cos_pitch + z * self.sin_pitch) / depth
         if sy < self.horizon - 2 or sy > self.config.screen_height + 2:
             return None
         return int(round(sx)), int(round(sy))
@@ -41,24 +47,65 @@ class Renderer:
         self.big = pygame.font.Font(None, 42)
 
         self.cx = config.screen_width / 2.0
-        self.horizon = config.screen_height * config.horizon_frac
+        self.horizon = self.projector.horizon
         self.f = self.projector.f
         self.h = config.camera_height
 
-        self.sky = (120, 170, 220)
-        self.ground = (55, 105, 55)
-        self.road_color = (72, 72, 72)
-        self.edge_color = (242, 242, 242)
+        self.sky = (164, 186, 192)
+        self.ground = (83, 103, 70)
+        self.road_color = (104, 105, 102)
+        self.edge_color = (120, 119, 108)
         self.hood_color = (25, 25, 25)
         self.dashboard_color = (16, 16, 20)
         self.text_color = (240, 240, 240)
+        self.cockpit = self._build_cockpit()
+        self.wheel = self._build_wheel()
+        self.landscape = self._build_landscape()
+
+    def _build_landscape(self) -> pygame.Surface:
+        """Cache the featureless sky; moving terrain is drawn separately."""
+        w, h = self.config.screen_width, self.config.screen_height
+        layer = pygame.Surface((w, h))
+        horizon = int(self.horizon)
+        for y in range(horizon + 1):
+            t = y / max(1, horizon)
+            color = tuple(int(a+(b-a)*t) for a,b in zip((145,174,187),(204,211,199)))
+            pygame.draw.line(layer, color, (0,y), (w,y))
+        pygame.draw.rect(layer, self.ground, (0,horizon,w,h-horizon))
+        return layer
+
+    def _draw_mountains(self, road: Road, car: Vehicle) -> None:
+        """Approximate distant parallax, anchored to the world rather than keys.
+
+        Actual view heading includes road tangent and relative vehicle heading.
+        Continuous ridge functions extend beyond both edges, so turning cannot
+        expose a blank strip or trigger a visible panorama wrap.
+        """
+        w, h = self.config.screen_width, self.config.screen_height
+        yaw = math.atan(road.center_dx(car.s)) + car.heading
+        world_x = road.center_x(car.s) + car.x + self.config.camera_lateral_offset
+        for distance, base, amplitude, color in [
+            (1600.0, .016, .075, (139,156,145)),
+            (650.0, .006, .043, (112,136,116)),
+        ]:
+            # Turning right moves the terrain left. Translation has a much
+            # smaller effect, with slightly more parallax in the nearer layer.
+            shift = self.f * (yaw + world_x / distance)
+            scale = 1.0 + min(max(car.s, 0.0), 1000.0) / (distance * 12.0)
+            ridge = []
+            for x in range(-8, w + 9, 8):
+                u = .5 + ((x + shift) / w - .5) / scale
+                profile = .50 + .24*math.sin(u*9.0+.8) + .16*math.sin(u*21.0+1.7) + .07*math.sin(u*39.0)
+                y = self.horizon - h * (base + amplitude * profile * scale)
+                ridge.append((x, int(y)))
+            ridge.extend([(w+8, int(self.horizon)), (-8, int(self.horizon))])
+            pygame.draw.polygon(self.screen, color, ridge)
 
     def draw_scene(self, road: Road, car: Vehicle, mask, info: dict, debug: bool = False) -> None:
         w, h = self.config.screen_width, self.config.screen_height
-        self.screen.fill(self.sky)
-        pygame.draw.rect(self.screen, self.ground, (0, int(self.horizon), w, h - int(self.horizon)))
+        self.screen.blit(self.landscape, (0, 0))
+        self._draw_mountains(road, car)
         self._draw_road(road, car)
-        self._draw_cockpit()
         self._draw_mask(mask)
         if debug and getattr(mask, "tangent", None) is not None:
             p = self.projector.project(road, car, mask.tangent.s, mask.tangent.x)
@@ -66,6 +113,7 @@ class Renderer:
                 x, y = p
                 pygame.draw.line(self.screen, (255, 230, 0), (x - 9, y), (x + 9, y), 2)
                 pygame.draw.line(self.screen, (255, 230, 0), (x, y - 9), (x, y + 9), 2)
+        self._draw_cockpit(car)
         self._draw_hud(car, mask, info, debug)
 
     def _draw_road(self, road: Road, car: Vehicle) -> None:
@@ -74,18 +122,20 @@ class Renderer:
         right_pts = []
 
         for y in range(int(self.horizon) + 1, h):
-            dy = max(1.0, y - self.horizon)
-            z = self.f * self.h / dy
+            q = (y - self.projector.cy) / self.f
+            cp, sp = self.projector.cos_pitch, self.projector.sin_pitch
+            z = self.h * (cp + q * sp) / max(1e-6, q * cp - sp)
             if z > 220.0:
                 continue
 
             s = car.s + z
-            center_lat = road.lateral_offset(car.s, car.x, car.heading, s, road.center_x(s))
+            center_lat = road.lateral_offset(car.s, car.x, car.heading, s, road.center_x(s)) - self.config.camera_lateral_offset
             left = center_lat - road.width / 2.0
             right = center_lat + road.width / 2.0
 
-            sx_l = self.cx + self.f * left / z
-            sx_r = self.cx + self.f * right / z
+            depth = z * cp - self.h * sp
+            sx_l = self.cx + self.f * left / depth
+            sx_r = self.cx + self.f * right / depth
 
             # Road fill for this scanline.
             pygame.draw.line(self.screen, self.road_color, (sx_l, y), (sx_r, y), 1)
@@ -97,47 +147,99 @@ class Renderer:
         # the far road/tangent point.
 
         if len(left_pts) > 1:
-            pygame.draw.lines(self.screen, self.edge_color, False, left_pts, 2)
-            pygame.draw.lines(self.screen, self.edge_color, False, right_pts, 2)
+            pygame.draw.lines(self.screen, self.edge_color, False, left_pts, 1)
+            pygame.draw.lines(self.screen, self.edge_color, False, right_pts, 1)
 
-    def _draw_cockpit(self) -> None:
-        """Draw a first-person hood and dashboard.
-
-        In a real car the road immediately in front of the bumper is hidden by
-        the hood/dashboard. Keeping that area visible turns the task into a
-        simple "hold the car on the line" game and removes the need to look
-        toward the tangent point.
-        """
+    def _build_cockpit(self) -> pygame.Surface:
+        """Cache fixed cabin geometry; all coordinates scale with the window."""
         w, h = self.config.screen_width, self.config.screen_height
-        cx = w / 2.0
+        layer = pygame.Surface((w, h), pygame.SRCALPHA)
+        def poly(color, points):
+            pygame.draw.polygon(layer, color, [(int(x*w), int(y*h)) for x, y in points])
+        # Low eye point: a broad foreshortened hood is visible beyond the
+        # windshield seal. Its curved front lip, rather than a road overlay,
+        # determines the nearest visible road distance.
+        top = 1.0 - self.config.hood_height_frac
+        hood = [(0,top+.10),(.23,top+.035),(.56,top),(.85,top+.008),(1,top+.035),(1,1),(0,1)]
+        poly((57,65,67), hood)
+        for i in range(28):
+            t=i/28
+            y=top+.045+t*.10
+            color=(int(66-26*t),int(75-28*t),int(77-29*t))
+            poly(color,[(0,y+.04),(.20,y),(.72,y+.01),(1,y+.055),(1,y+.062),(.72,y+.017),(.20,y+.007),(0,y+.047)])
+        # Windshield rubber, wipers, and the curved dashboard crash pad.
+        poly((12,19,22),[(0,top+.115),(.17,top+.085),(.56,top+.093),(1,top+.15),(1,1),(0,1)])
+        poly((35,43,47),[(0,top+.14),(.18,top+.105),(.56,top+.12),(1,top+.175),(1,1),(0,1)])
+        pygame.draw.lines(layer,(89,98,99),False,[(0,int((top+.115)*h)),(int(.18*w),int((top+.085)*h)),(int(.56*w),int((top+.093)*h)),(w,int((top+.15)*h))],2)
+        for x1,x2,yy in [(.18,.45,top+.09),(.56,.82,top+.11)]:
+            pygame.draw.line(layer,(14,21,24),(int(x1*w),int(yy*h)),(int(x2*w),int((yy+.009)*h)),3)
+        dash=top+.17
+        for y in range(int(dash*h),h):
+            shade=int(34-16*(y-dash*h)/max(1,h-dash*h))
+            pygame.draw.line(layer,(shade,shade+5,shade+9),(0,y),(w,y))
+        # Instrument binnacle projects toward the driver, below the glass.
+        poly((12,18,23),[(.22,dash+.09),(.25,dash+.015),(.31,dash-.025),(.50,dash-.025),(.57,dash+.03),(.59,dash+.10)])
+        # Reference framing: only the lower left A-pillar enters the image.
+        # Its foot joins the door at the screen edge, not a second strip of
+        # forward-facing dashboard with exterior road visible to its left.
+        poly((10,17,21),[(0,top-.035),(.045,top+.045),(.115,top+.15),(.10,1),(0,1)])
+        poly((27,35,40),[(0,top+.08),(.052,top+.15),(.077,1),(0,1)])
+        poly((15,22,26),[(0,top-.21),(.018,top-.17),(.145,top+.105),(.12,top+.18),(.077,top+.185),(0,top+.075)])
+        poly((143,148,141),[(0,top-.19),(.009,top-.17),(.131,top+.10),(.112,top+.155),(.087,top+.16),(0,top+.045)])
+        poly((171,175,163),[(0,top-.17),(.008,top-.155),(.124,top+.10),(.112,top+.12),(.097,top+.105)])
+        poly((16,23,27),[(1.16,0),(1.20,0),(1,top+.23),(.96,top+.17)])
+        poly((120,130,126),[(1.17,.08),(1.185,.10),(.989,top+.20),(.975,top+.17)])
+        for x,width in [(.065,.10),(.65,.13),(.84,.15)]:
+            rect=pygame.Rect(int(x*w),int((dash+.035)*h),int(width*w),int(.061*h))
+            pygame.draw.rect(layer,(87,96,99),rect,border_radius=6)
+            pygame.draw.rect(layer,(8,15,20),rect.inflate(-5,-5),border_radius=5)
+            for i in range(1,5):
+                yy=rect.y+int(rect.h*i/5)
+                pygame.draw.line(layer,(56,66,71),(rect.x+7,yy),(rect.right-7,yy),2)
+        # Recessed, unlit center console adds depth without driving guidance.
+        poly((8,15,21),[(.67,dash+.13),(.85,dash+.14),(.87,1),(.66,1)])
+        poly((20,31,40),[(.69,dash+.15),(.83,dash+.16),(.84,dash+.27),(.68,dash+.26)])
+        pygame.draw.line(layer,(74,83,86),(int(.75*w),int((dash+.14)*h)),(w,int((dash+.16)*h)),2)
+        return layer
 
-        hood_h = int(h * self.config.hood_height_frac)
-        top_y = h - hood_h
-        top_w = int(w * self.config.hood_top_width_frac)
-        bottom_w = int(w * self.config.hood_bottom_width_frac)
-        hood_pts = [
-            (int(cx - bottom_w / 2), h),
-            (int(cx + bottom_w / 2), h),
-            (int(cx + top_w / 2), top_y),
-            (int(cx - top_w / 2), top_y),
-        ]
-        pygame.draw.polygon(self.screen, self.hood_color, hood_pts)
-        pygame.draw.line(self.screen, (70, 70, 70), hood_pts[3], hood_pts[2], 2)
+    def _build_wheel(self) -> pygame.Surface:
+        size = max(100, int(min(self.config.screen_width*.31, self.config.screen_height*.57)))
+        wheel = pygame.Surface((size, size), pygame.SRCALPHA)
+        c, r = size//2, int(size*.45)
+        pygame.draw.circle(wheel, (8,12,15), (c,c), r, max(9,int(size*.063)))
+        pygame.draw.circle(wheel, (68,75,78), (c,c), r, 2)
+        pygame.draw.circle(wheel, (31,37,40), (c,c), int(r*.87), 2)
+        for angle in (0, 180, 90):
+            t = math.radians(angle)
+            end = (int(c+math.cos(t)*r*.91), int(c+math.sin(t)*r*.91))
+            pygame.draw.line(wheel, (12,17,21), (c,c), end, int(size*.095))
+            pygame.draw.line(wheel, (63,70,73), (c,c), end, max(2,int(size*.018)))
+        pygame.draw.ellipse(wheel, (19,25,29), (int(size*.32),int(size*.35),int(size*.36),int(size*.31)))
+        pygame.draw.arc(wheel, (72,79,82), (int(size*.33),int(size*.36),int(size*.34),int(size*.28)), .15, 2.9, 2)
+        label = self.small.render('AIRBAG', True, (112,120,123))
+        wheel.blit(label, (c-label.get_width()//2, int(size*.52)))
+        return wheel
 
-        # Dashboard sits closest to the driver and covers the bottom of the
-        # view. Its top edge is slightly curved so it reads as a cockpit rather
-        # than a flat black rectangle.
-        dash_h = int(h * self.config.dashboard_height_frac)
-        dash_top = h - dash_h
-        dash_pts = [
-            (0, h),
-            (0, dash_top + 10),
-            (int(w * 0.5), dash_top - 8),
-            (w, dash_top + 10),
-            (w, h),
-        ]
-        pygame.draw.polygon(self.screen, self.dashboard_color, dash_pts)
-        pygame.draw.lines(self.screen, (58, 58, 64), False, dash_pts[1:4], 2)
+    def _draw_cockpit(self, car: Vehicle) -> None:
+        w, h = self.config.screen_width, self.config.screen_height
+        self.screen.blit(self.cockpit, (0,0))
+        # A fixed speedometer supplies no road curvature or lateral-error cue.
+        center = (int(.43*w), int((1-self.config.hood_height_frac+.19)*h))
+        radius = int(.061*h)
+        pygame.draw.circle(self.screen, (6,12,16), center, radius)
+        pygame.draw.circle(self.screen, (87,99,101), center, radius, 2)
+        for value in range(0,121,20):
+            angle = math.radians(150 + value*2)
+            p1 = (int(center[0]+math.cos(angle)*radius*.76), int(center[1]+math.sin(angle)*radius*.76))
+            p2 = (int(center[0]+math.cos(angle)*radius*.9), int(center[1]+math.sin(angle)*radius*.9))
+            pygame.draw.line(self.screen, (158,174,173), p1,p2,2)
+        angle = math.radians(150 + min(120, car.speed*3.6)*2)
+        tip = (int(center[0]+math.cos(angle)*radius*.7),int(center[1]+math.sin(angle)*radius*.7))
+        pygame.draw.line(self.screen, (192,124,100), center,tip,2)
+        # Positive model steering moves right on screen; pygame positive rotation
+        # is counterclockwise, hence the negative sign. Use actual smoothed steer.
+        rotated = pygame.transform.rotozoom(self.wheel, -math.degrees(car.steer)*self.config.steering_wheel_ratio, 1)
+        self.screen.blit(rotated, rotated.get_rect(center=(int(.43*w),int(.865*h))))
 
     def _draw_mask(self, mask) -> None:
         if getattr(mask, "condition", "full") == "full":

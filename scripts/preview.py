@@ -44,7 +44,7 @@ def main() -> None:
             "practice": False,
             "condition": condition,
         }
-        renderer.draw_scene(road, car, mask, info, debug=True)
+        renderer.draw_scene(road, car, mask, info, debug=False)
         pygame.display.flip()
         out = ROOT / "data" / f"preview_{condition}.png"
         pygame.image.save(screen, str(out))

@@ -46,7 +46,7 @@ class TangentEstimator:
     def _bearing(self, road: Road, car: Vehicle, side: int, z: float) -> float:
         s = car.s + z
         ex = road.edge_x(s, side)
-        lat = road.lateral_offset(car.s, car.x, car.heading, s, ex)
+        lat = road.lateral_offset(car.s, car.x, car.heading, s, ex) - self.config.camera_lateral_offset
         return math.atan2(lat, z)
 
     def find(

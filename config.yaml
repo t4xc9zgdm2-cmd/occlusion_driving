@@ -4,15 +4,18 @@ screen_height: 720
 fps: 60
 
 # Camera / projection
-fov_deg: 105
+fov_deg: 85
 camera_height: 1.2
 horizon_frac: 0.42
+camera_pitch_deg: 3.0
+camera_lateral_offset: -0.35
 
 # First-person cockpit (hood + dashboard occlude the near-field road)
-hood_height_frac: 0.24
+hood_height_frac: 0.40
 hood_top_width_frac: 0.40
 hood_bottom_width_frac: 0.60
 dashboard_height_frac: 0.13
+steering_wheel_ratio: 14.0
 
 # Road / vehicle
 road_width: 7.0

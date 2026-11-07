@@ -1,6 +1,7 @@
 # Display
-screen_width: 1280
+screen_width: 1152
 screen_height: 720
+scene_crop_right: 128
 fps: 60
 
 # Camera / projection

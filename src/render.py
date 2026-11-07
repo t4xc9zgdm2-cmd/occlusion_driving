@@ -13,8 +13,8 @@ class Projector:
 
     def __init__(self, config: Config):
         self.config = config
-        self.f = (config.screen_width / 2.0) / math.tan(math.radians(config.fov_deg) / 2.0)
-        self.cx = config.screen_width / 2.0
+        self.f = (config.scene_width / 2.0) / math.tan(math.radians(config.fov_deg) / 2.0)
+        self.cx = config.scene_width / 2.0
         self.cy = config.screen_height * config.horizon_frac
         pitch = math.radians(config.camera_pitch_deg)
         self.sin_pitch, self.cos_pitch = math.sin(pitch), math.cos(pitch)
@@ -46,7 +46,7 @@ class Renderer:
         self.small = pygame.font.Font(None, 15)
         self.big = pygame.font.Font(None, 42)
 
-        self.cx = config.screen_width / 2.0
+        self.cx = config.scene_width / 2.0
         self.horizon = self.projector.horizon
         self.f = self.projector.f
         self.h = config.camera_height
@@ -64,7 +64,7 @@ class Renderer:
 
     def _build_landscape(self) -> pygame.Surface:
         """Cache the featureless sky; moving terrain is drawn separately."""
-        w, h = self.config.screen_width, self.config.screen_height
+        w, h = self.config.scene_width, self.config.screen_height
         layer = pygame.Surface((w, h))
         horizon = int(self.horizon)
         for y in range(horizon + 1):
@@ -81,7 +81,7 @@ class Renderer:
         Continuous ridge functions extend beyond both edges, so turning cannot
         expose a blank strip or trigger a visible panorama wrap.
         """
-        w, h = self.config.screen_width, self.config.screen_height
+        w, h = self.config.scene_width, self.config.screen_height
         yaw = math.atan(road.center_dx(car.s)) + car.heading
         world_x = road.center_x(car.s) + car.x + self.config.camera_lateral_offset
         for distance, base, amplitude, color in [
@@ -102,7 +102,7 @@ class Renderer:
             pygame.draw.polygon(self.screen, color, ridge)
 
     def draw_scene(self, road: Road, car: Vehicle, mask, info: dict, debug: bool = False) -> None:
-        w, h = self.config.screen_width, self.config.screen_height
+        w, h = self.config.scene_width, self.config.screen_height
         self.screen.blit(self.landscape, (0, 0))
         self._draw_mountains(road, car)
         self._draw_road(road, car)
@@ -152,7 +152,7 @@ class Renderer:
 
     def _build_cockpit(self) -> pygame.Surface:
         """Cache fixed cabin geometry; all coordinates scale with the window."""
-        w, h = self.config.screen_width, self.config.screen_height
+        w, h = self.config.scene_width, self.config.screen_height
         layer = pygame.Surface((w, h), pygame.SRCALPHA)
         def poly(color, points):
             pygame.draw.polygon(layer, color, [(int(x*w), int(y*h)) for x, y in points])
@@ -227,7 +227,7 @@ class Renderer:
         return layer
 
     def _build_wheel(self) -> pygame.Surface:
-        size = max(100, int(min(self.config.screen_width*.31, self.config.screen_height*.57)))
+        size = max(100, int(min(self.config.scene_width*.31, self.config.screen_height*.57)))
         wheel = pygame.Surface((size, size), pygame.SRCALPHA)
         c, r = size//2, int(size*.45)
         pygame.draw.circle(wheel, (8,12,15), (c,c), r, max(9,int(size*.063)))
@@ -245,7 +245,7 @@ class Renderer:
         return wheel
 
     def _draw_cockpit(self, car: Vehicle) -> None:
-        w, h = self.config.screen_width, self.config.screen_height
+        w, h = self.config.scene_width, self.config.screen_height
         self.screen.blit(self.cockpit, (0,0))
         # A fixed speedometer supplies no road curvature or lateral-error cue.
         center = (int(.37*w), int((1-self.config.hood_height_frac+.19)*h))

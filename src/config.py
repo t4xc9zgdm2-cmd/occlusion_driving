@@ -9,8 +9,9 @@ import yaml
 @dataclass
 class Config:
     # Display
-    screen_width: int = 1280
+    screen_width: int = 1152
     screen_height: int = 720
+    scene_crop_right: int = 128  # crop passenger side without squeezing the scene
     fps: int = 60
 
     # Camera / projection
@@ -65,6 +66,10 @@ class Config:
             raise ValueError(f"Unknown mask_style: {self.mask_style}")
         self.conditions = list(self.conditions)
         self.seeds = [int(s) for s in self.seeds]
+
+    @property
+    def scene_width(self) -> int:
+        return self.screen_width + self.scene_crop_right
 
     @property
     def max_steer_rad(self) -> float:
